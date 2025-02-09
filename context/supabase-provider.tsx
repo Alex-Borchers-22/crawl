@@ -1,6 +1,8 @@
 import { Session, User } from "@supabase/supabase-js";
 import { useRouter, useSegments, SplashScreen } from "expo-router";
 import { createContext, useContext, useEffect, useState } from "react";
+import * as Linking from 'expo-linking';
+import * as WebBrowser from 'expo-web-browser';
 
 import { supabase } from "@/config/supabase";
 
@@ -12,6 +14,7 @@ type SupabaseContextProps = {
 	initialized?: boolean;
 	signUp: (email: string, password: string) => Promise<void>;
 	signInWithPassword: (email: string, password: string) => Promise<void>;
+	signInWithGoogle: () => Promise<void>;
 	signOut: () => Promise<void>;
 };
 
@@ -25,6 +28,7 @@ export const SupabaseContext = createContext<SupabaseContextProps>({
 	initialized: false,
 	signUp: async () => {},
 	signInWithPassword: async () => {},
+	signInWithGoogle: async () => {},
 	signOut: async () => {},
 });
 
@@ -53,6 +57,46 @@ export const SupabaseProvider = ({ children }: SupabaseProviderProps) => {
 			password,
 		});
 		if (error) {
+			throw error;
+		}
+	};
+
+	const signInWithGoogle = async () => {
+		try {
+			const redirectUrl = Linking.createURL('google-auth');
+
+			const { data, error } = await supabase.auth.signInWithOAuth({
+				provider: 'google',
+				options: {
+					redirectTo: redirectUrl,
+					skipBrowserRedirect: true,
+				},
+			});
+
+			if (error) throw error;
+			if (!data.url) throw new Error('No OAuth URL');
+
+			const result = await WebBrowser.openAuthSessionAsync(
+				data.url,
+				redirectUrl,
+			);
+
+			if (result.type === 'success') {
+				const { url } = result;
+				const urlObject = new URL(url);
+				const params = Object.fromEntries(urlObject.searchParams.entries());
+				
+				if (params?.code) {
+					const { data, error } = await supabase.auth.exchangeCodeForSession(params.code);
+					if (error) throw error;
+					if (data.session) {
+						setSession(data.session);
+						setUser(data.session.user);
+					}
+				}
+			}
+		} catch (error) {
+			console.error('Error signing in with Google:', error);
 			throw error;
 		}
 	};
@@ -106,6 +150,7 @@ export const SupabaseProvider = ({ children }: SupabaseProviderProps) => {
 				initialized,
 				signUp,
 				signInWithPassword,
+				signInWithGoogle,
 				signOut,
 			}}
 		>
