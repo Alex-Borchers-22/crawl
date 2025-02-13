@@ -1,4 +1,6 @@
 import { Stack } from "expo-router";
+import { Tabs } from 'expo-router';
+import { MaterialIcons } from '@expo/vector-icons';
 
 import { colors } from "@/constants/colors";
 import { useColorScheme } from "@/lib/useColorScheme";
@@ -11,66 +13,55 @@ export default function AppLayout() {
 	const { colorScheme } = useColorScheme();
 
 	return (
-		<Stack screenOptions={{ headerShown: false, gestureEnabled: false }}>
-			<Stack.Screen name="(protected)" />
-			<Stack.Screen name="welcome" />
-			<Stack.Screen
-				name="sign-up"
+		<Tabs
+			screenOptions={{
+				headerShown: true,
+				tabBarActiveTintColor: '#9333ea', // purple-600
+				tabBarInactiveTintColor: '#6b7280', // gray-500
+				tabBarStyle: {
+					borderTopWidth: 1,
+					borderTopColor: '#e5e7eb', // gray-200
+					paddingBottom: 4,
+					paddingTop: 4,
+				},
+			}}
+		>
+			<Tabs.Screen
+				name="index"
 				options={{
-					presentation: "modal",
-					headerShown: true,
-					headerTitle: "Sign Up",
-					headerStyle: {
-						backgroundColor:
-							colorScheme === "dark"
-								? colors.dark.background
-								: colors.light.background,
-					},
-					headerTintColor:
-						colorScheme === "dark"
-							? colors.dark.foreground
-							: colors.light.foreground,
-					gestureEnabled: true,
+					title: 'Home',
+					tabBarIcon: ({ color }) => (
+						<MaterialIcons name="home" size={24} color={color} />
+					),
 				}}
 			/>
-			<Stack.Screen
-				name="sign-in"
+			<Tabs.Screen
+				name="events"
 				options={{
-					presentation: "modal",
-					headerShown: true,
-					headerTitle: "Sign In",
-					headerStyle: {
-						backgroundColor:
-							colorScheme === "dark"
-								? colors.dark.background
-								: colors.light.background,
-					},
-					headerTintColor:
-						colorScheme === "dark"
-							? colors.dark.foreground
-							: colors.light.foreground,
-					gestureEnabled: true,
+					title: 'Events',
+					tabBarIcon: ({ color }) => (
+						<MaterialIcons name="event" size={24} color={color} />
+					),
 				}}
 			/>
-			<Stack.Screen
-				name="modal"
+			<Tabs.Screen
+				name="scavenger-hunt"
 				options={{
-					presentation: "modal",
-					headerShown: true,
-					headerTitle: "Modal",
-					headerStyle: {
-						backgroundColor:
-							colorScheme === "dark"
-								? colors.dark.background
-								: colors.light.background,
-					},
-					headerTintColor:
-						colorScheme === "dark"
-							? colors.dark.foreground
-							: colors.light.foreground,
-					gestureEnabled: true,
+					title: 'Hunt',
+					tabBarIcon: ({ color }) => (
+						<MaterialIcons name="search" size={24} color={color} />
+					),
 				}}
 			/>
-		</Stack>
+			<Tabs.Screen
+				name="profile"
+				options={{
+					title: 'Profile',
+					tabBarIcon: ({ color }) => (
+						<MaterialIcons name="person" size={24} color={color} />
+					),
+				}}
+			/>
+		</Tabs>
 	);
 }
