@@ -35,15 +35,6 @@ export default function ProtectedLayout() {
 				}} 
 			/>
 			<Tabs.Screen 
-				name="plans" 
-				options={{ 
-					title: "Plans",
-					tabBarIcon: ({ color, size }) => (
-						<Ionicons name="calendar" size={size} color={color} />
-					),
-				}} 
-			/>
-			<Tabs.Screen 
 				name="settings" 
 				options={{ 
 					title: "Settings",
