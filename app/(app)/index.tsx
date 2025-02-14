@@ -4,6 +4,7 @@ import { Link, useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { format } from 'date-fns';
+import { useEvents } from '@/hooks/events';
 
 type Event = {
   id: string;
@@ -22,15 +23,10 @@ export default function HomeScreen() {
 
   async function loadEvents() {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
       const { data, error } = await supabase
         .from('events')
         .select('*')
-        .or(`user_id.eq.${user.id},event_participants.user_id.eq.${user.id}`)
         .order('event_date', { ascending: true });
-
       if (error) throw error;
       setEvents(data || []);
     } catch (error) {

@@ -44,7 +44,7 @@ export default function AppLayout() {
 					),
 				}}
 			/>
-			<Tabs.Screen
+			{/* <Tabs.Screen
 				name="scavenger-hunt"
 				options={{
 					title: 'Hunt',
@@ -52,7 +52,7 @@ export default function AppLayout() {
 						<MaterialIcons name="search" size={24} color={color} />
 					),
 				}}
-			/>
+			/> */}
 			<Tabs.Screen
 				name="profile"
 				options={{
