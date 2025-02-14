@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../../lib/supabase';
+import { useSupabase } from '@/context/supabase-provider';
 
 type UserProfile = {
   email: string;
@@ -16,6 +17,7 @@ export default function ProfileScreen() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [locationSharing, setLocationSharing] = useState(false);
+  const { user, signOut } = useSupabase();
 
   useEffect(() => {
     loadProfile();
@@ -23,7 +25,6 @@ export default function ProfileScreen() {
 
   async function loadProfile() {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         router.replace('/(auth)/login');
         return;
@@ -123,8 +124,7 @@ export default function ProfileScreen() {
 
   async function handleSignOut() {
     try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
+      await signOut();
       router.replace('/(auth)/login');
     } catch (error) {
       console.error('Error signing out:', error);

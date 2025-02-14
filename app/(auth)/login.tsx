@@ -1,28 +1,23 @@
 import { useState, useRef } from 'react';
 import { View, Text, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, Keyboard } from 'react-native';
-import { Link, useRouter } from 'expo-router';
-import { supabase } from '@/lib/supabase';
+import { Link } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LandingLogo } from '@/components/landing-logo';
 import { Input } from '@/components/ui/input';
+import { useSupabase } from '@/context/supabase-provider';
+import { supabase } from '@/config/supabase';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('amb035@morningside.edu');
   const [password, setPassword] = useState('Password1!');
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
+  const { signInWithPassword } = useSupabase();
   const scrollViewRef = useRef<ScrollView>(null);
 
   async function handleEmailLogin() {
     try {
       setLoading(true);
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      if (error) throw error;
-      console.log("passed");
-      router.replace('/(app)');
+      await signInWithPassword(email, password);
     } catch (error) {
       console.error(error);
       alert('Error logging in');

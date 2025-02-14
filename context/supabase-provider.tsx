@@ -102,8 +102,19 @@ export const SupabaseProvider = ({ children }: SupabaseProviderProps) => {
 	};
 
 	const signOut = async () => {
-		const { error } = await supabase.auth.signOut();
-		if (error) {
+		try {
+			const { error } = await supabase.auth.signOut();
+			if (error) throw error;
+			
+			// Explicitly clear the session and user state
+			setSession(null);
+			setUser(null);
+			
+			// Force navigation to login
+			console.log("signing out");
+			router.replace("/(auth)/login");
+		} catch (error) {
+			console.error('Error signing out:', error);
 			throw error;
 		}
 	};
@@ -124,23 +135,19 @@ export const SupabaseProvider = ({ children }: SupabaseProviderProps) => {
 	useEffect(() => {
 		if (!initialized) return;
 
-		const inProtectedGroup = segments[1] === "(protected)";
+		const inAuthGroup = segments[0] === "(auth)";
+		const inAppGroup = segments[0] === "(app)";
 
-		if (session && !inProtectedGroup) {
-			router.replace("/(app)/(protected)");
-		} else if (!session) {
-			router.replace("/(app)/welcome");
+		if (session && inAuthGroup) {
+			router.replace("/(app)");
+		} else if (!session && inAppGroup) {
+			router.replace("/(auth)/login");
 		}
-
-		/* HACK: Something must be rendered when determining the initial auth state... 
-		instead of creating a loading screen, we use the SplashScreen and hide it after
-		a small delay (500 ms)
-		*/
 
 		setTimeout(() => {
 			SplashScreen.hideAsync();
 		}, 500);
-	}, [initialized, session]);
+	}, [initialized, session, segments]);
 
 	return (
 		<SupabaseContext.Provider
