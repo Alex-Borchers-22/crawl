@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Switch, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, Switch, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { supabase } from '../../../lib/supabase';
+import { Input } from '@/components/ui/input';
 
 export default function CreateEventScreen() {
   const router = useRouter();
@@ -52,13 +53,13 @@ export default function CreateEventScreen() {
   return (
     <ScrollView className="flex-1 bg-gray-50 dark:bg-gray-900">
       <View className="p-6">
-        <View className="space-y-4">
-          <View>
+        <View className="space-y-6">
+          <View className='mb-2'>
             <Text className="text-gray-700 dark:text-gray-300 mb-1 font-medium">
               Event Title
             </Text>
-            <TextInput
-              className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700"
+            <Input
+              className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
               placeholder="Enter event title"
               value={title}
               onChangeText={setTitle}
@@ -66,9 +67,9 @@ export default function CreateEventScreen() {
             />
           </View>
 
-          <View>
+          <View className='mb-2'>
             <Text className="text-gray-700 dark:text-gray-300 mb-1 font-medium">
-              Date & Time
+              Date
             </Text>
             <TouchableOpacity
               className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700 flex-row items-center"
@@ -76,14 +77,15 @@ export default function CreateEventScreen() {
             >
               <MaterialIcons name="event" size={24} color="#6b7280" />
               <Text className="ml-2 text-gray-700 dark:text-gray-300">
-                {eventDate.toLocaleString()}
+                {eventDate.toLocaleDateString()}
               </Text>
             </TouchableOpacity>
             {showDatePicker && (
               <DateTimePicker
                 value={eventDate}
-                mode="datetime"
-                onChange={(event, date) => {
+                mode="date"
+                display="default"
+                onChange={(event: DateTimePickerEvent, date?: Date) => {
                   setShowDatePicker(false);
                   if (date) setEventDate(date);
                 }}
