@@ -1,14 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Dimensions, StyleSheet, Pressable, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Dimensions, StyleSheet, Pressable, Platform, Modal } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Picker } from '@react-native-picker/picker';
 import { supabase } from '../../../lib/supabase';
-import MapView, { Marker, Callout, CalloutSubview } from 'react-native-maps';
+import MapView, { Marker, Callout, CalloutSubview, Region } from 'react-native-maps';
 import { GooglePlacesAutocomplete, GooglePlacesAutocompleteRef } from 'react-native-google-places-autocomplete';
 import * as Location from 'expo-location';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { Linking } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
 
 interface Location {
   latitude: number;
@@ -46,6 +45,12 @@ interface MapEvent {
   };
 }
 
+interface AddressComponent {
+  long_name: string;
+  short_name: string;
+  types: string[];
+}
+
 const VENUE_TYPES = [
   'bar',
   'restaurant',
@@ -71,12 +76,9 @@ export default function AddVenueScreen() {
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
   const [showCallout, setShowCallout] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
-  const [initialRegion, setInitialRegion] = useState<null | {
-    latitude: number;
-    longitude: number;
-    latitudeDelta: number;
-    longitudeDelta: number;
-  }>(null);
+  const [initialRegion, setInitialRegion] = useState<Region | undefined>();
+  const [modalVisible, setModalVisible] = useState(false);
+  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const mapRef = useRef<MapView | null>(null);
   const searchBarRef = useRef<GooglePlacesAutocompleteRef | null>(null);
 
@@ -134,13 +136,127 @@ export default function AddVenueScreen() {
     })();
   }, []);
 
-  const handleMapPress = (event: MapEvent) => {
+  const fetchPlaceDetails = async (lat: number, lng: number) => {
+    setIsLoadingDetails(true);
+    try {
+      // Use Google Places API reverse geocoding to get place ID
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY}`
+      );
+      const data = await response.json();
+      
+      if (data.status === 'REQUEST_DENIED') {
+        console.error('Geocoding API not enabled:', data.error_message);
+        // Fallback to just using the coordinates
+        setSelectedLocation({
+          latitude: lat,
+          longitude: lng,
+          name: 'Selected Location',
+          address: 'Custom location selected on map'
+        });
+        setModalVisible(true);
+        return;
+      }
+      
+      if (data.results && data.results[0]) {
+        const placeId = data.results[0].place_id;
+        const address = data.results[0].formatted_address;
+        let name = '';
+        
+        // Try to get a meaningful name from address components
+        const addressComponents = data.results[0].address_components as AddressComponent[];
+        if (addressComponents) {
+          // Look for establishment name or street number + route
+          const establishment = addressComponents.find(c => c.types.includes('establishment'));
+          const streetNumber = addressComponents.find(c => c.types.includes('street_number'));
+          const route = addressComponents.find(c => c.types.includes('route'));
+          
+          if (establishment) {
+            name = establishment.long_name;
+          } else if (streetNumber && route) {
+            name = `${streetNumber.long_name} ${route.long_name}`;
+          } else if (route) {
+            name = route.long_name;
+          }
+        }
+        
+        try {
+          // Fetch place details using the place ID
+          const detailsResponse = await fetch(
+            `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=name,formatted_address,geometry,formatted_phone_number,website,rating,price_level,opening_hours,reviews,url,user_ratings_total&key=${process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY}`
+          );
+          const detailsData = await detailsResponse.json();
+          
+          if (detailsData.result) {
+            const details = detailsData.result;
+            const location: Location = {
+              latitude: details.geometry.location.lat,
+              longitude: details.geometry.location.lng,
+              name: details.name,
+              address: details.formatted_address,
+              placeId: placeId,
+              phoneNumber: details.formatted_phone_number,
+              website: details.website,
+              rating: details.rating,
+              priceLevel: details.price_level,
+              openingHours: details.opening_hours?.weekday_text,
+              reviews: details.reviews,
+              url: details.url,
+              userRatingsTotal: details.user_ratings_total
+            };
+            setSelectedLocation(location);
+            setModalVisible(true);
+          } else {
+            // If place details fails, use geocoding data
+            setSelectedLocation({
+              latitude: lat,
+              longitude: lng,
+              name: name || 'Selected Location',
+              address: address,
+              placeId: placeId
+            });
+            setModalVisible(true);
+          }
+        } catch (detailsError) {
+          console.error('Error fetching place details:', detailsError);
+          // Use geocoding data as fallback
+          setSelectedLocation({
+            latitude: lat,
+            longitude: lng,
+            name: name || 'Selected Location',
+            address: address,
+            placeId: placeId
+          });
+          setModalVisible(true);
+        }
+      } else {
+        // No results from geocoding
+        setSelectedLocation({
+          latitude: lat,
+          longitude: lng,
+          name: 'Selected Location',
+          address: 'Custom location selected on map'
+        });
+        setModalVisible(true);
+      }
+    } catch (error) {
+      console.error('Error fetching place details:', error);
+      // If we can't get details, just use the coordinates
+      setSelectedLocation({
+        latitude: lat,
+        longitude: lng,
+        name: 'Selected Location',
+        address: 'Custom location selected on map'
+      });
+      setModalVisible(true);
+    } finally {
+      setIsLoadingDetails(false);
+    }
+  };
+
+  const handleMapPress = async (event: MapEvent) => {
     const { coordinate } = event.nativeEvent;
-    setSelectedLocation({
-      latitude: coordinate.latitude,
-      longitude: coordinate.longitude
-    });
-    setShowCallout(true);
+    await fetchPlaceDetails(coordinate.latitude, coordinate.longitude);
   };
 
   const handlePlaceSelect = (data: any, details: any) => {
@@ -160,10 +276,6 @@ export default function AddVenueScreen() {
       url: details.url,
       userRatingsTotal: details.user_ratings_total
     };
-    
-    console.log('data', data);
-    console.log('details', details);
-    console.log('location', location);
 
     setSelectedLocation(location);
     setInitialRegion({
@@ -173,7 +285,6 @@ export default function AddVenueScreen() {
       longitudeDelta: LONGITUDE_DELTA,
     });
 
-    // Center map on selected location
     mapRef.current?.animateToRegion({
       latitude: location.latitude,
       longitude: location.longitude,
@@ -181,14 +292,14 @@ export default function AddVenueScreen() {
       longitudeDelta: LONGITUDE_DELTA,
     }, 1000);
 
-    setShowCallout(true);
-    setShowDetails(true);
+    setModalVisible(true);
   };
 
   const handleConfirmLocation = () => {
     if (selectedLocation) {
       setName(selectedLocation.name || '');
       setAddress(selectedLocation.address || '');
+      setModalVisible(false);
       setShowMap(false);
     } else {
       alert('Please select a location on the map first');
@@ -283,47 +394,159 @@ export default function AddVenueScreen() {
           </View>
         </View>
 
-        {initialRegion && (
-          <MapView
-            ref={mapRef}
-            style={styles.map}
-            initialRegion={initialRegion}
-            onPress={handleMapPress}
-            showsUserLocation={true}
-            showsMyLocationButton={true}
-          >
-            {selectedLocation && (
-              <Marker
-                coordinate={{
-                  latitude: selectedLocation.latitude,
-                  longitude: selectedLocation.longitude
-                }}
-              >
-                <Callout tooltip onPress={handleConfirmLocation}>
-                  <View style={styles.calloutContainer}>
-                    <View style={styles.callout}>
-                      <Text style={styles.calloutTitle}>
+        <MapView
+          ref={mapRef}
+          style={styles.map}
+          initialRegion={initialRegion}
+          onPress={handleMapPress}
+          showsUserLocation={true}
+          showsMyLocationButton={true}
+        >
+          {selectedLocation && (
+            <Marker
+              coordinate={{
+                latitude: selectedLocation.latitude,
+                longitude: selectedLocation.longitude
+              }}
+            />
+          )}
+        </MapView>
+
+        {isLoadingDetails && (
+          <View style={styles.loadingOverlay}>
+            <Text style={styles.loadingText}>Loading place details...</Text>
+          </View>
+        )}
+
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={modalVisible}
+          onRequestClose={() => setModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <ScrollView>
+                {selectedLocation && (
+                  <View style={styles.modalBody}>
+                    <View style={styles.modalHeader}>
+                      <Text style={styles.modalTitle}>
                         {selectedLocation.name || 'Selected Location'}
                       </Text>
-                      <Text style={styles.calloutAddress}>
-                        {selectedLocation.address || 'Address not available'}
-                      </Text>
                       <TouchableOpacity
-                        style={styles.confirmButton}
-                        onPress={handleConfirmLocation}
+                        onPress={() => setModalVisible(false)}
+                        style={styles.closeButton}
                       >
-                        <Text style={styles.confirmButtonText}>
-                          Confirm Location
-                        </Text>
+                        <Ionicons name="close" size={24} color="#666" />
                       </TouchableOpacity>
                     </View>
-                    {/* <View style={styles.calloutArrow} /> */}
+
+                    <Text style={styles.modalAddress}>
+                      {selectedLocation.address}
+                    </Text>
+
+                    {selectedLocation.rating && (
+                      <View style={styles.infoRow}>
+                        <MaterialIcons name="star" size={20} color="#F59E0B" />
+                        <Text style={styles.infoText}>
+                          {selectedLocation.rating} ({selectedLocation.userRatingsTotal} reviews)
+                        </Text>
+                      </View>
+                    )}
+
+                    {selectedLocation.priceLevel && (
+                      <View style={styles.infoRow}>
+                        <MaterialIcons name="attach-money" size={20} color="#6B7280" />
+                        <Text style={styles.infoText}>
+                          {'$'.repeat(selectedLocation.priceLevel)}
+                        </Text>
+                      </View>
+                    )}
+
+                    {selectedLocation.phoneNumber && (
+                      <View style={styles.infoRow}>
+                        <MaterialIcons name="phone" size={20} color="#6B7280" />
+                        <Text style={styles.infoText}>
+                          {selectedLocation.phoneNumber}
+                        </Text>
+                      </View>
+                    )}
+
+                    {selectedLocation.openingHours && (
+                      <View style={styles.section}>
+                        <Text style={styles.sectionTitle}>Opening Hours</Text>
+                        {selectedLocation.openingHours.map((hours, index) => (
+                          <Text key={index} style={styles.hoursText}>
+                            {hours}
+                          </Text>
+                        ))}
+                      </View>
+                    )}
+
+                    {(selectedLocation.website || selectedLocation.url) && (
+                      <View style={styles.buttonRow}>
+                        {selectedLocation.website && (
+                          <TouchableOpacity
+                            style={[styles.button, styles.websiteButton]}
+                            onPress={() => Linking.openURL(selectedLocation.website!)}
+                          >
+                            <Text style={styles.buttonText}>Website</Text>
+                          </TouchableOpacity>
+                        )}
+                        {selectedLocation.url && (
+                          <TouchableOpacity
+                            style={[styles.button, styles.mapsButton]}
+                            onPress={() => Linking.openURL(selectedLocation.url!)}
+                          >
+                            <Text style={styles.buttonText}>View on Maps</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    )}
+
+                    {selectedLocation.reviews && selectedLocation.reviews.length > 0 && (
+                      <View style={styles.section}>
+                        <Text style={styles.sectionTitle}>Recent Reviews</Text>
+                        {selectedLocation.reviews.slice(0, 3).map((review, index) => (
+                          <View key={index} style={styles.review}>
+                            <View style={styles.reviewHeader}>
+                              <Text style={styles.reviewAuthor}>
+                                {review.author_name}
+                              </Text>
+                              <View style={styles.stars}>
+                                {[...Array(5)].map((_, i) => (
+                                  <MaterialIcons
+                                    key={i}
+                                    name="star"
+                                    size={16}
+                                    color={i < review.rating ? '#F59E0B' : '#D1D5DB'}
+                                  />
+                                ))}
+                              </View>
+                            </View>
+                            <Text style={styles.reviewText}>{review.text}</Text>
+                            <Text style={styles.reviewDate}>
+                              {new Date(review.time * 1000).toLocaleDateString()}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+
+                    <TouchableOpacity
+                      style={styles.confirmButton}
+                      onPress={handleConfirmLocation}
+                    >
+                      <Text style={styles.confirmButtonText}>
+                        Confirm Location
+                      </Text>
+                    </TouchableOpacity>
                   </View>
-                </Callout>
-              </Marker>
-            )}
-          </MapView>
-        )}
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
       </View>
     );
   }
@@ -607,5 +830,132 @@ const styles = StyleSheet.create({
   editText: {
     color: '#3B82F6',
     fontWeight: 'bold',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '80%',
+  },
+  modalBody: {
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1F2937',
+    flex: 1,
+  },
+  closeButton: {
+    padding: 5,
+  },
+  modalAddress: {
+    fontSize: 16,
+    color: '#4B5563',
+    marginBottom: 20,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  infoText: {
+    marginLeft: 8,
+    fontSize: 16,
+    color: '#4B5563',
+  },
+  section: {
+    marginTop: 20,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1F2937',
+    marginBottom: 10,
+  },
+  hoursText: {
+    fontSize: 14,
+    color: '#4B5563',
+    marginBottom: 4,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 15,
+  },
+  button: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    minWidth: 120,
+  },
+  websiteButton: {
+    backgroundColor: '#3B82F6',
+  },
+  mapsButton: {
+    backgroundColor: '#EF4444',
+  },
+  buttonText: {
+    color: 'white',
+    textAlign: 'center',
+    fontWeight: 'bold',
+  },
+  review: {
+    marginBottom: 15,
+    paddingBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  reviewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 5,
+  },
+  reviewAuthor: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginRight: 10,
+  },
+  stars: {
+    flexDirection: 'row',
+  },
+  reviewText: {
+    fontSize: 14,
+    color: '#4B5563',
+    marginBottom: 5,
+  },
+  reviewDate: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: 'white',
+    fontSize: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    padding: 15,
+    borderRadius: 8,
   },
 }); 
