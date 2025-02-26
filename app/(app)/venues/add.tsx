@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Dimensions, StyleSheet, Pressable, Platform, Modal } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Picker } from '@react-native-picker/picker';
@@ -8,6 +8,7 @@ import { GooglePlacesAutocomplete, GooglePlacesAutocompleteRef } from 'react-nat
 import * as Location from 'expo-location';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { Linking } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 interface Location {
   latitude: number;
@@ -51,27 +52,16 @@ interface AddressComponent {
   types: string[];
 }
 
-const VENUE_TYPES = [
-  'bar',
-  'restaurant',
-  'club',
-  'pub',
-  'cafe',
-  'brewery',
-  'other'
-];
-
 const { width, height } = Dimensions.get('window');
 const ASPECT_RATIO = width / height;
 const LATITUDE_DELTA = 0.02;
 const LONGITUDE_DELTA = LATITUDE_DELTA * ASPECT_RATIO;
 
-export default function AddVenueScreen() {
+export default function AddVenueScreen({ eventId }: { eventId?: string }) {
   const router = useRouter();
   const [showMap, setShowMap] = useState(true);
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
-  const [venueType, setVenueType] = useState(VENUE_TYPES[0]);
   const [loading, setLoading] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
   const [showCallout, setShowCallout] = useState(false);
@@ -79,6 +69,11 @@ export default function AddVenueScreen() {
   const [initialRegion, setInitialRegion] = useState<Region | undefined>();
   const [modalVisible, setModalVisible] = useState(false);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
+  
+  // Time picker states
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [selectedTime, setSelectedTime] = useState(new Date());
+  
   const mapRef = useRef<MapView | null>(null);
   const searchBarRef = useRef<GooglePlacesAutocompleteRef | null>(null);
 
@@ -204,6 +199,7 @@ export default function AddVenueScreen() {
               url: details.url,
               userRatingsTotal: details.user_ratings_total
             };
+            console.log(location);
             setSelectedLocation(location);
             setModalVisible(true);
           } else {
@@ -296,14 +292,102 @@ export default function AddVenueScreen() {
   };
 
   const handleConfirmLocation = () => {
-    if (selectedLocation) {
-      setName(selectedLocation.name || '');
-      setAddress(selectedLocation.address || '');
-      setModalVisible(false);
-      setShowMap(false);
-    } else {
+    if (!selectedLocation) {
       alert('Please select a location on the map first');
+      return;
     }
+    
+    // Show time picker instead of immediately submitting
+    setModalVisible(false);
+    setShowTimePicker(true);
+  };
+
+  const handleTimeChange = (event: any, selectedDate?: Date) => {
+    const currentDate = selectedDate || selectedTime;
+    setSelectedTime(currentDate);
+  };
+  
+  const handleSubmitVenue = async () => {
+    if (!selectedLocation) return;
+    
+    try {
+      setLoading(true);
+
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        alert('Please sign in to add a venue');
+        setLoading(false);
+        return;
+      }
+
+      // Use the name and address from the selected location
+      const venueName = selectedLocation.name || '';
+      const venueAddress = selectedLocation.address || '';
+
+      if (!venueName.trim() || !venueAddress.trim()) {
+        alert('Venue name and address are required');
+        setLoading(false);
+        return;
+      }
+
+      // Get timezone offset in format "+/-HH:MM"
+      const tzOffset = new Date().getTimezoneOffset();
+      const offsetHours = Math.abs(Math.floor(tzOffset / 60));
+      const offsetMinutes = Math.abs(tzOffset % 60);
+      const offsetSign = tzOffset <= 0 ? '+' : '-';
+      const formattedOffset = `${offsetSign}${offsetHours.toString().padStart(2, '0')}:${offsetMinutes.toString().padStart(2, '0')}`;
+      
+      // Format as time with timezone (PostgreSQL timetz format)
+      // Format should be: HH:MM:SS+/-HH:MM (without date part)
+      const timeString = `${selectedTime.getHours().toString().padStart(2, '0')}:${
+        selectedTime.getMinutes().toString().padStart(2, '0')}:00${formattedOffset}`;
+
+      // Define the venue data with proper typing
+      interface VenueData {
+        name: string;
+        address: string;
+        status: string;
+        latitude: number;
+        longitude: number;
+        google_place_id?: string;
+        start_time: string;
+        event_id?: string;
+      }
+
+      const venueData: VenueData = {
+        name: venueName.trim(),
+        address: venueAddress.trim(),
+        status: 'pending',
+        latitude: selectedLocation.latitude,
+        longitude: selectedLocation.longitude,
+        google_place_id: selectedLocation.placeId,
+        start_time: timeString
+      };
+      
+      // Add eventId to the venue data if it's provided
+      if (eventId) {
+        venueData.event_id = eventId;
+      }
+
+      const { error } = await supabase.from('venues').insert(venueData);
+
+      if (error) throw error;
+      
+      alert('Venue added successfully!');
+      router.back();
+    } catch (error) {
+      console.error('Error adding venue:', error);
+      alert('Error adding venue. Please try again.');
+    } finally {
+      setLoading(false);
+      setShowTimePicker(false);
+    }
+  };
+
+  const handleCancelTimePicker = () => {
+    setShowTimePicker(false);
+    setModalVisible(true); // Show location modal again
   };
 
   const handleReturnToMap = () => {
@@ -315,41 +399,61 @@ export default function AddVenueScreen() {
     searchBarRef.current?.blur();
   };
 
-  async function handleAddVenue() {
-    if (!name.trim() || !address.trim() || !selectedLocation) {
-      alert('Please fill in all required fields and select a location');
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        alert('Please sign in to add a venue');
-        return;
-      }
-
-      const { error } = await supabase.from('venues').insert({
-        name: name.trim(),
-        address: address.trim(),
-        venue_type: venueType,
-        status: 'pending',
-        latitude: selectedLocation.latitude,
-        longitude: selectedLocation.longitude,
-        place_id: selectedLocation.placeId
-      });
-
-      if (error) throw error;
-      
-      router.back();
-    } catch (error) {
-      console.error('Error adding venue:', error);
-      alert('Error adding venue. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  }
+  // Time picker Modal
+  const renderTimePickerModal = () => {
+    return (
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={showTimePicker}
+        onRequestClose={handleCancelTimePicker}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { padding: 20, maxHeight: 450 }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Start Time</Text>
+              <TouchableOpacity
+                onPress={handleCancelTimePicker}
+                style={styles.closeButton}
+              >
+                <Ionicons name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={{ alignItems: 'center', justifyContent: 'center', marginTop: 20 }}>
+              <DateTimePicker
+                value={selectedTime}
+                mode="time"
+                display={Platform.OS === 'ios' ? "spinner" : "default"}
+                onChange={handleTimeChange}
+                style={{ width: '100%' }}
+                textColor="#000000"
+                themeVariant="light"
+              />
+              
+              <View style={[styles.buttonRow, { marginTop: 20, height: 150, justifyContent: 'space-between' }]}>
+                <TouchableOpacity
+                  style={[styles.button, { backgroundColor: '#6B7280', minWidth: 140 }]}
+                  onPress={handleCancelTimePicker}
+                >
+                  <Text style={styles.buttonText}>Back</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.button, styles.confirmButton, loading && styles.loadingButton, { minWidth: 140 }]}
+                  onPress={handleSubmitVenue}
+                  disabled={loading}
+                >
+                  <Text style={styles.buttonText}>
+                    {loading ? 'Adding...' : 'Confirm Time'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    );
+  };
 
   if (showMap) {
     return (
@@ -534,11 +638,12 @@ export default function AddVenueScreen() {
                     )}
 
                     <TouchableOpacity
-                      style={styles.confirmButton}
+                      style={[styles.confirmButton, loading && styles.loadingButton]}
                       onPress={handleConfirmLocation}
+                      disabled={loading}
                     >
                       <Text style={styles.confirmButtonText}>
-                        Confirm Location
+                        {loading ? 'Adding Venue...' : 'Add Venue'}
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -547,163 +652,19 @@ export default function AddVenueScreen() {
             </View>
           </View>
         </Modal>
+        
+        {renderTimePickerModal()}
       </View>
     );
   }
 
+  // We no longer need the form view since we're adding venues directly from the map
   return (
-    <ScrollView className="flex-1 bg-gray-50 dark:bg-gray-900">
-      <View className="p-6">
-        <View className="space-y-4">
-          <View className="flex-row justify-between items-center mb-4">
-            <TouchableOpacity
-              onPress={() => setShowMap(true)}
-              className="bg-gray-200 dark:bg-gray-700 px-4 py-2 rounded-lg"
-            >
-              <Text className="text-gray-700 dark:text-gray-300">Back to Map</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              className="bg-purple-600 px-4 py-2 rounded-lg"
-              onPress={handleAddVenue}
-              disabled={loading}
-            >
-              <Text className="text-white">
-                {loading ? 'Adding...' : 'Add Venue'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {selectedLocation && (
-            <View className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4">
-              <Text className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-                {selectedLocation.name}
-              </Text>
-              <Text className="text-gray-600 dark:text-gray-400 mb-4">
-                {selectedLocation.address}
-              </Text>
-
-              {selectedLocation.rating && (
-                <View className="flex-row items-center mb-2">
-                  <MaterialIcons name="star" size={20} color="#F59E0B" />
-                  <Text className="ml-1 text-gray-700 dark:text-gray-300">
-                    {selectedLocation.rating} ({selectedLocation.userRatingsTotal} reviews)
-                  </Text>
-                </View>
-              )}
-
-              {selectedLocation.priceLevel && (
-                <View className="flex-row items-center mb-2">
-                  <MaterialIcons name="attach-money" size={20} color="#6B7280" />
-                  <Text className="ml-1 text-gray-700 dark:text-gray-300">
-                    {'$'.repeat(selectedLocation.priceLevel)}
-                  </Text>
-                </View>
-              )}
-
-              {selectedLocation.phoneNumber && (
-                <View className="flex-row items-center mb-2">
-                  <MaterialIcons name="phone" size={20} color="#6B7280" />
-                  <Text className="ml-1 text-gray-700 dark:text-gray-300">
-                    {selectedLocation.phoneNumber}
-                  </Text>
-                </View>
-              )}
-
-              {selectedLocation.openingHours && (
-                <View className="mb-4">
-                  <Text className="font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                    Opening Hours
-                  </Text>
-                  {selectedLocation.openingHours.map((hours, index) => (
-                    <Text 
-                      key={index} 
-                      className="text-gray-600 dark:text-gray-400"
-                    >
-                      {hours}
-                    </Text>
-                  ))}
-                </View>
-              )}
-
-              {(selectedLocation.website || selectedLocation.url) && (
-                <View className="flex-row flex-wrap gap-2 mb-4">
-                  {selectedLocation.website && (
-                    <TouchableOpacity
-                      className="bg-blue-500 px-4 py-2 rounded-lg"
-                      onPress={() => Linking.openURL(selectedLocation.website!)}
-                    >
-                      <Text className="text-white">Website</Text>
-                    </TouchableOpacity>
-                  )}
-                  {selectedLocation.url && (
-                    <TouchableOpacity
-                      className="bg-red-500 px-4 py-2 rounded-lg"
-                      onPress={() => Linking.openURL(selectedLocation.url!)}
-                    >
-                      <Text className="text-white">View on Google Maps</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              )}
-
-              {selectedLocation.reviews && selectedLocation.reviews.length > 0 && (
-                <View>
-                  <Text className="font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                    Recent Reviews
-                  </Text>
-                  {selectedLocation.reviews.slice(0, 3).map((review, index) => (
-                    <View key={index} className="mb-3 pb-3 border-b border-gray-200 dark:border-gray-700">
-                      <View className="flex-row items-center mb-1">
-                        <Text className="font-medium text-gray-900 dark:text-gray-100">
-                          {review.author_name}
-                        </Text>
-                        <View className="flex-row ml-2">
-                          {[...Array(5)].map((_, i) => (
-                            <MaterialIcons
-                              key={i}
-                              name="star"
-                              size={16}
-                              color={i < review.rating ? '#F59E0B' : '#D1D5DB'}
-                            />
-                          ))}
-                        </View>
-                      </View>
-                      <Text className="text-gray-600 dark:text-gray-400">
-                        {review.text}
-                      </Text>
-                      <Text className="text-gray-500 dark:text-gray-500 text-sm mt-1">
-                        {new Date(review.time * 1000).toLocaleDateString()}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-            </View>
-          )}
-
-          <View>
-            <Text className="text-gray-700 dark:text-gray-300 mb-1 font-medium">
-              Venue Type
-            </Text>
-            <View className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-              <Picker
-                selectedValue={venueType}
-                onValueChange={(itemValue) => setVenueType(itemValue)}
-                style={{ color: '#374151' }}
-              >
-                {VENUE_TYPES.map((type) => (
-                  <Picker.Item
-                    key={type}
-                    label={type.charAt(0).toUpperCase() + type.slice(1)}
-                    value={type}
-                  />
-                ))}
-              </Picker>
-            </View>
-          </View>
-        </View>
+    <View style={styles.container}>
+      <View style={styles.loadingOverlay}>
+        <Text style={styles.loadingText}>Loading...</Text>
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
@@ -957,5 +918,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
     padding: 15,
     borderRadius: 8,
+  },
+  loadingButton: {
+    backgroundColor: '#9CA3AF',
+    opacity: 0.7,
   },
 }); 

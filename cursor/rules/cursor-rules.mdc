@@ -1,0 +1,168 @@
+---
+description: General cursor rules for expo with supabase
+globs: *.tsx
+---
+# Cursor Rules MDC
+
+## Code Style and Structure
+
+- Write concise, technical TypeScript code with accurate examples.
+- Use functional and declarative programming patterns; avoid classes.
+- Prefer iteration and modularization over code duplication.
+- Use descriptive variable names with auxiliary verbs (e.g., isLoading, hasError).
+- Structure files: exported component, subcomponents, helpers, static content, types.
+- Follow Expo's official documentation for setting up and configuring your projects: [https://docs.expo.dev/](mdc:https:/docs.expo.dev)
+
+## Naming Conventions
+
+- Use lowercase with dashes for directories (e.g., components/auth-wizard).
+- Favor named exports for components.
+
+## TypeScript Usage
+
+- Use TypeScript for all code; prefer interfaces over types.
+- Avoid enums; use maps instead.
+- Use functional components with TypeScript interfaces.
+- Use strict mode in TypeScript for better type safety.
+
+## Syntax and Formatting
+
+- Use the "function" keyword for pure functions.
+- Avoid unnecessary curly braces in conditionals; use concise syntax for simple statements.
+- Use declarative JSX.
+- Use Prettier for consistent code formatting.
+
+## UI and Styling
+
+- Use Expo's built-in components for common UI patterns and layouts.
+- Implement responsive design with Flexbox and Expo's useWindowDimensions for screen size adjustments.
+- Use styled-components or Tailwind CSS for component styling.
+- Implement dark mode support using Expo's useColorScheme.
+- Ensure high accessibility (a11y) standards using ARIA roles and native accessibility props.
+- Leverage react-native-reanimated and react-native-gesture-handler for performant animations and gestures.
+
+## Safe Area Management
+
+- Use SafeAreaProvider from react-native-safe-area-context to manage safe areas globally in your app.
+- Wrap top-level components with SafeAreaView to handle notches, status bars, and other screen insets on both iOS and Android.
+- Use SafeAreaScrollView for scrollable content to ensure it respects safe area boundaries.
+- Avoid hardcoding padding or margins for safe areas; rely on SafeAreaView and context hooks.
+
+## Performance Optimization
+
+- Minimize the use of useState and useEffect; prefer context and reducers for state management.
+- Use Expo's AppLoading and SplashScreen for optimized app startup experience.
+- Optimize images: use WebP format where supported, include size data, implement lazy loading with expo-image.
+- Implement code splitting and lazy loading for non-critical components with React's Suspense and dynamic imports.
+- Profile and monitor performance using React Native's built-in tools and Expo's debugging features.
+- Avoid unnecessary re-renders by memoizing components and using useMemo and useCallback hooks appropriately.
+
+## Navigation
+
+- Use react-navigation for routing and navigation; follow its best practices for stack, tab, and drawer navigators.
+- Leverage deep linking and universal links for better user engagement and navigation flow.
+- Use dynamic routes with expo-router for better navigation handling.
+
+## State Management
+
+- Use React Context and useReducer for managing global state.
+- Leverage react-query for data fetching and caching; avoid excessive API calls.
+- For complex state management, consider using Zustand or Redux Toolkit.
+- Handle URL search parameters using libraries like expo-linking.
+
+## Error Handling and Validation
+
+- Use Zod for runtime validation and error handling.
+- Implement proper error logging using Sentry or a similar service.
+- Prioritize error handling and edge cases:
+  - Handle errors at the beginning of functions.
+  - Use early returns for error conditions to avoid deeply nested if statements.
+  - Avoid unnecessary else statements; use if-return pattern instead.
+  - Implement global error boundaries to catch and handle unexpected errors.
+- Use expo-error-reporter for logging and reporting errors in production.
+
+## Testing
+
+- Write unit tests using Jest and React Native Testing Library.
+- Implement integration tests for critical user flows using Detox.
+- Use Expo's testing tools for running tests in different environments.
+- Consider snapshot testing for components to ensure UI consistency.
+
+## Security
+
+- Sanitize user inputs to prevent XSS attacks.
+- Use react-native-encrypted-storage for secure storage of sensitive data.
+- Ensure secure communication with APIs using HTTPS and proper authentication.
+- Use Expo's Security guidelines to protect your app: [https://docs.expo.dev/guides/security/](mdc:https:/docs.expo.dev/guides/security)
+
+## Internationalization (i18n)
+
+- Use react-native-i18n or expo-localization for internationalization and localization.
+- Support multiple languages and RTL layouts.
+- Ensure text scaling and font adjustments for accessibility.
+
+## Supabase Best Practices
+
+- Use Row Level Security (RLS) for data access control.
+- Leverage Supabase Auth for authentication and authorization.
+- Structure database relationships using foreign keys for data integrity.
+- Implement database functions for complex logic.
+- Use PostgREST API caching to improve performance.
+- Monitor database performance using Supabase Insights.
+- Store sensitive environment variables securely and avoid hardcoding API keys.
+- Regularly back up your database and test disaster recovery strategies.
+
+## Database Context
+
+### Events Table
+
+Stores main event information.
+
+```sql
+CREATE TABLE events (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES auth.users(id),
+    title VARCHAR(255) NOT NULL,
+    event_date TIMESTAMP WITH TIME ZONE NOT NULL,
+    is_private BOOLEAN DEFAULT true,
+    is_scavenger_hunt BOOLEAN DEFAULT false,
+    status VARCHAR(50) DEFAULT 'planning',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### Event Participants Table
+
+Manages participants and their roles.
+
+```sql
+CREATE TABLE event_participants (
+    event_id UUID REFERENCES events(id),
+    user_id UUID REFERENCES auth.users(id),
+    role VARCHAR(50) DEFAULT 'participant',
+    location_sharing_enabled BOOLEAN DEFAULT false,
+    last_known_location POINT,
+    last_location_update TIMESTAMP WITH TIME ZONE,
+    PRIMARY KEY (event_id, user_id)
+);
+```
+
+### Venues Table
+
+Stores event locations.
+
+```sql
+CREATE TABLE venues (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL,
+    address VARCHAR(512) NOT NULL,
+    latitude DECIMAL(10,8),
+    longitude DECIMAL(11,8),
+    google_place_id VARCHAR(255),
+    venue_type VARCHAR(100),
+    status VARCHAR(50) DEFAULT 'pending',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    start_time TIMETZ WITH TIME ZONE
+);
+```
